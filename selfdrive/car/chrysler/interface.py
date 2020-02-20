@@ -2,7 +2,6 @@
 from cereal import car
 from selfdrive.config import Conversions as CV
 from selfdrive.controls.lib.drive_helpers import EventTypes as ET, create_event
-from selfdrive.controls.lib.vehicle_model import VehicleModel
 from selfdrive.car.chrysler.carstate import CarState, get_can_parser, get_camera_parser
 from selfdrive.car.chrysler.values import Ecu, ECU_FINGERPRINT, CAR, FINGERPRINTS
 from selfdrive.car import STD_CARGO_KG, scale_rot_inertia, scale_tire_stiffness, is_ecu_disconnected, gen_empty_fingerprint
@@ -13,24 +12,9 @@ ButtonType = car.CarState.ButtonEvent.Type
 
 class CarInterface(CarInterfaceBase):
   def __init__(self, CP, CarController):
-    self.CP = CP
-    self.VM = VehicleModel(CP)
+    super().__init__(CP, CarController, CarState, get_can_parser, get_cam_can_parser=get_camera_parser)
 
-    self.gas_pressed_prev = False
-    self.brake_pressed_prev = False
-    self.cruise_enabled_prev = False
     self.low_speed_alert = False
-    self.left_blinker_prev = False
-    self.right_blinker_prev = False
-
-    # *** init the major players ***
-    self.CS = CarState(CP)
-    self.cp = get_can_parser(CP)
-    self.cp_cam = get_camera_parser(CP)
-
-    self.CC = None
-    if CarController is not None:
-      self.CC = CarController(self.cp.dbc_name, CP.carFingerprint, CP.enableCamera)
 
   @staticmethod
   def compute_gb(accel, speed):
@@ -123,22 +107,7 @@ class CarInterface(CarInterfaceBase):
     ret.yawRate = self.VM.yaw_rate(ret.steeringAngle * CV.DEG_TO_RAD, ret.vEgo)
     ret.steeringRateLimited = self.CC.steer_rate_limited if self.CC is not None else False
 
-    # TODO: button presses
-    buttonEvents = []
-
-    if ret.leftBlinker != self.left_blinker_prev:
-      be = car.CarState.ButtonEvent.new_message()
-      be.type = ButtonType.leftBlinker
-      be.pressed = ret.leftBlinker != 0
-      buttonEvents.append(be)
-
-    if ret.rightBlinker != self.right_blinker_prev:
-      be = car.CarState.ButtonEvent.new_message()
-      be.type = ButtonType.rightBlinker
-      be.pressed = ret.rightBlinker != 0
-      buttonEvents.append(be)
-
-    ret.buttonEvents = buttonEvents
+    ret.buttonEvents = []
 
     self.low_speed_alert = (ret.vEgo < self.CP.minSteerSpeed)
 
@@ -177,8 +146,6 @@ class CarInterface(CarInterfaceBase):
     self.gas_pressed_prev = ret.gasPressed
     self.brake_pressed_prev = ret.brakePressed
     self.cruise_enabled_prev = ret.cruiseState.enabled
-    self.left_blinker_prev = ret.leftBlinker
-    self.right_blinker_prev = ret.rightBlinker
 
     # copy back carState packet to CS
     self.CS.out = ret.as_reader()
